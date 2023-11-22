@@ -55,6 +55,15 @@ commands:
           name: Build folly and dependencies
           command: |
             make build_folly
+
+  install-gflags:
+    steps:
+      - run:
+          name: Install gflags
+          command: |
+            sudo apt-get update -y && sudo apt-get install -y libgflags-dev
+
+
 executors:
   linux-docker:
     docker:
@@ -118,6 +127,39 @@ jobs:
       - setup-folly
       - build-folly
       - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j20 && ctest -j20)
+      - post-steps
+
+  build-linux-arm-cmake-no_test_run:
+    machine:
+      image: ubuntu-2004:202111-02
+    resource_class: arm.large
+    environment:
+      JAVA_HOME: /usr/lib/jvm/java-8-openjdk-arm64
+    steps:
+      - pre-steps
+      - install-gflags
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Build with cmake"
+          command: |
+            mkdir build
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=Release -DWITH_TESTS=0 -DWITH_GFLAGS=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=1 ..
+            make -j4
+      - run:
+          name: "Build Java with cmake"
+          command: |
+            rm -rf build
+            mkdir build
+            cd build
+            cmake -DJNI=1 -DCMAKE_BUILD_TYPE=Release -DWITH_GFLAGS=1 ..
+            make -j4 rocksdb rocksdbjni
       - post-steps
 
 workflows:
