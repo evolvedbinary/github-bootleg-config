@@ -169,3 +169,4 @@ workflows:
       - build-linux-java
       - build-linux-java-static
       - build-linux-cmake-with-folly
+      - build-linux-arm-cmake-no_test_run
