@@ -1,0 +1,55 @@
+version: 2.1
+
+
+jobs:
+  build-linux-java:
+    executor: linux-docker
+    resource_class: large
+    steps:
+      - pre-steps
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Test RocksDBJava"
+          command: make V=1 J=8 -j8 jtest
+      - post-steps
+
+  build-linux-java-static:
+    executor: linux-java-docker
+    resource_class: large
+    steps:
+      - pre-steps
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Build RocksDBJava Static Library"
+          command: scl enable devtoolset-7 'make V=1 J=8 -j8 rocksdbjavastatic'
+      - post-steps
+
+  build-linux-cmake-with-folly:
+    executor: linux-docker
+    resource_class: 2xlarge
+    steps:
+      - pre-steps
+      - setup-folly
+      - build-folly
+      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j20 && ctest -j20)
+      - post-steps
+
+workflows:
+  version: 2
+  jobs-java:
+    jobs:
+      - build-linux-java
+      - build-linux-java-static
+      - build-linux-cmake-with-folly

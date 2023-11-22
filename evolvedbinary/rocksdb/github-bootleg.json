@@ -1,0 +1,7 @@
+{
+  "branch-filter": [
+    "eb/.*",
+    "main"
+  ],
+  "target-repository": "https://github.com/evolvedbinary/ghbootleg-rocksdb.git"
+}
