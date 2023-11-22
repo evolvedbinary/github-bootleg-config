@@ -42,6 +42,20 @@ commands:
           path: /tmp/core_dumps
           when: on_fail
 
+  setup-folly:
+    steps:
+      - run:
+          name: Checkout folly sources
+          command: |
+            make checkout_folly
+
+  build-folly:
+    steps:
+      - run:
+          name: Build folly and dependencies
+          command: |
+            make build_folly
+
 jobs:
   build-linux-java:
     executor: linux-docker
@@ -76,21 +90,6 @@ jobs:
           name: "Build RocksDBJava Static Library"
           command: scl enable devtoolset-7 'make V=1 J=8 -j8 rocksdbjavastatic'
       - post-steps
-
-  setup-folly:
-    steps:
-      - run:
-          name: Checkout folly sources
-          command: |
-            make checkout_folly
-
-  build-folly:
-    steps:
-      - run:
-          name: Build folly and dependencies
-          command: |
-            make build_folly
-
 
   build-linux-cmake-with-folly:
     executor: linux-docker
