@@ -1,5 +1,46 @@
 version: 2.1
 
+commands:
+  pre-steps:
+    steps:
+      - checkout
+      - run:
+          name: Setup Environment Variables
+          command: |
+            echo "export GTEST_THROW_ON_FAILURE=0" >> $BASH_ENV
+            echo "export GTEST_OUTPUT=\"xml:/tmp/test-results/\"" >> $BASH_ENV
+            echo "export SKIP_FORMAT_BUCK_CHECKS=1" >> $BASH_ENV
+            echo "export GTEST_COLOR=1" >> $BASH_ENV
+            echo "export CTEST_OUTPUT_ON_FAILURE=1" >> $BASH_ENV
+            echo "export CTEST_TEST_TIMEOUT=300" >> $BASH_ENV
+            echo "export ZLIB_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/zlib" >> $BASH_ENV
+            echo "export BZIP2_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/bzip2" >> $BASH_ENV
+            echo "export SNAPPY_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/snappy" >> $BASH_ENV
+            echo "export LZ4_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/lz4" >> $BASH_ENV
+            echo "export ZSTD_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/zstd" >> $BASH_ENV
+
+  post-steps:
+    steps:
+      - store_test_results: # store test result if there's any
+          path: /tmp/test-results
+      - store_artifacts: # store LOG for debugging if there's any
+          path: LOG
+      - run: # on fail, compress Test Logs for diagnosing the issue
+          name: Compress Test Logs
+          command: tar -cvzf t.tar.gz t
+          when: on_fail
+      - store_artifacts: # on fail, store Test Logs for diagnosing the issue
+          path: t.tar.gz
+          destination: test_logs
+          when: on_fail
+      - run: # store core dumps if there's any
+          command: |
+            mkdir -p /tmp/core_dumps
+            cp core.* /tmp/core_dumps
+          when: on_fail
+      - store_artifacts:
+          path: /tmp/core_dumps
+          when: on_fail
 
 jobs:
   build-linux-java:
@@ -35,6 +76,21 @@ jobs:
           name: "Build RocksDBJava Static Library"
           command: scl enable devtoolset-7 'make V=1 J=8 -j8 rocksdbjavastatic'
       - post-steps
+
+  setup-folly:
+    steps:
+      - run:
+          name: Checkout folly sources
+          command: |
+            make checkout_folly
+
+  build-folly:
+    steps:
+      - run:
+          name: Build folly and dependencies
+          command: |
+            make build_folly
+
 
   build-linux-cmake-with-folly:
     executor: linux-docker
