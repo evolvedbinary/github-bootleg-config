@@ -121,12 +121,12 @@ jobs:
 
   build-linux-cmake-with-folly:
     executor: linux-docker
-    resource_class: 2xlarge
+    resource_class: xlarge
     steps:
       - pre-steps
       - setup-folly
       - build-folly
-      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j20 && ctest -j20)
+      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j && ctest -j10)
       - post-steps
 
   build-linux-arm-cmake-no_test_run:
