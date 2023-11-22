@@ -126,7 +126,7 @@ jobs:
       - pre-steps
       - setup-folly
       - build-folly
-      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j && ctest -j10)
+      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j10 && ctest -j10)
       - post-steps
 
   build-linux-arm-cmake-no_test_run:
