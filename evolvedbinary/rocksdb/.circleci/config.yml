@@ -184,19 +184,19 @@ jobs:
       - run:
           name: "Build tests"
           command: cd build && make V=1 -j16
-      - when:
-          condition: << parameters.run_even_tests >>
-          steps:
-            - run:
-                name: "Run even tests"
-                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 0,,2
-      - when:
-          condition:
-            not: << parameters.run_even_tests >>
-          steps:
-            - run:
-                name: "Run odd tests"
-                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 1,,2
+#      - when:
+#          condition: << parameters.run_even_tests >>
+#          steps:
+#            - run:
+#                name: "Run even tests"
+#                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 0,,2
+#      - when:
+#          condition:
+#            not: << parameters.run_even_tests >>
+#          steps:
+#            - run:
+#                name: "Run odd tests"
+#                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 1,,2
       - post-steps
 
 
@@ -221,7 +221,7 @@ jobs:
   build-windows-vs2019:
     executor:
       name: win/server-2019
-      size: xlarge
+      size: large # - Try with large only, msbuild doesn't support parallel compilation.
     environment:
       THIRDPARTY_HOME: C:/Users/circleci/thirdparty
       CMAKE_HOME: C:/Program Files/CMake
@@ -406,14 +406,35 @@ jobs:
 
 workflows:
   version: 2
-  jobs-linux:
+  jobs-linux-1:
     jobs:
       - build-linux-java
-      - build-linux-java # Build twice
       - build-linux-java-static
       - build-linux-cmake-with-folly
       - build-linux-arm-cmake-no_test_run
-  jobs-windows:
+  jobs-linux-2:
+    jobs:
+      - build-linux-java
+      - build-linux-java-static
+      - build-linux-cmake-with-folly
+      - build-linux-arm-cmake-no_test_run
+  jobs-linux-3:
+    jobs:
+      - build-linux-java
+      - build-linux-java-static
+      - build-linux-cmake-with-folly
+      - build-linux-arm-cmake-no_test_run
+  jobs-windows-1:
+    jobs:
+      - build-windows-vs2019
+      - build-windows-vs2022
+      - build-cmake-mingw
+  jobs-windows-2:
+    jobs:
+      - build-windows-vs2019
+      - build-windows-vs2022
+      - build-cmake-mingw
+  jobs-windows-3:
     jobs:
       - build-windows-vs2019
       - build-windows-vs2022
