@@ -75,11 +75,11 @@ commands:
             cd ..
             echo "Building with VS version: $Env:CMAKE_GENERATOR"
             msbuild.exe build/rocksdb.sln -maxCpuCount -property:Configuration=Debug -property:Platform=x64
-      - run:
-          name: "Test RocksDB"
-          shell: powershell.exe
-          command: |
-            build_tools\run_ci_db_test.ps1 -SuiteRun arena_test,db_basic_test,db_test,db_test2,db_merge_operand_test,bloom_test,c_test,coding_test,crc32c_test,dynamic_bloom_test,env_basic_test,env_test,hash_test,random_test -Concurrency 16
+#      - run: # Disable windows test, We rely on Default PR build.
+#          name: "Test RocksDB"
+#          shell: powershell.exe
+#          command: |
+#            build_tools\run_ci_db_test.ps1 -SuiteRun arena_test,db_basic_test,db_test,db_test2,db_merge_operand_test,bloom_test,c_test,coding_test,crc32c_test,dynamic_bloom_test,env_basic_test,env_test,hash_test,random_test -Concurrency 16
       - run:
           name: "Test RocksJava"
           command: |
@@ -89,7 +89,6 @@ commands:
   pre-steps-macos:
     steps:
       - pre-steps
-
 
   post-steps:
     steps:
@@ -182,9 +181,9 @@ jobs:
           name: "cmake generate project file"
           command: ulimit -S -n `ulimit -H -n` && mkdir build && cd build && cmake -DWITH_GFLAGS=1 ..
       - run:
-          name: "Build tests"
-          command: cd build && make V=1 -j16
-#      - when:
+          name: "Build RocksDB"
+          command: cd build && make V=1 -j8
+#      - when: #Disable MAC test, We rely on Default PR build.
 #          condition: << parameters.run_even_tests >>
 #          steps:
 #            - run:
@@ -203,7 +202,7 @@ jobs:
   build-windows-vs2022:
     executor:
       name: win/server-2022
-      size: xlarge
+      size: large
     environment:
       THIRDPARTY_HOME: C:/Users/circleci/thirdparty
       CMAKE_HOME: C:/Program Files/CMake
@@ -221,7 +220,7 @@ jobs:
   build-windows-vs2019:
     executor:
       name: win/server-2019
-      size: large # - Try with large only, msbuild doesn't support parallel compilation.
+      size: large
     environment:
       THIRDPARTY_HOME: C:/Users/circleci/thirdparty
       CMAKE_HOME: C:/Program Files/CMake
@@ -250,7 +249,7 @@ jobs:
             which javac && javac -version
       - run:
           name: "Test RocksDBJava"
-          command: make V=1 J=8 -j8 jtest
+          command: make V=1 J=8 -j6 jtest
       - post-steps
 
   build-linux-java-static:
@@ -267,7 +266,7 @@ jobs:
             which javac && javac -version
       - run:
           name: "Build RocksDBJava Static Library"
-          command: scl enable devtoolset-7 'make V=1 J=8 -j8 rocksdbjavastatic'
+          command: scl enable devtoolset-7 'make V=1 J=8 -j6 rocksdbjavastatic'
       - post-steps
 
   build-macos-java:
@@ -316,7 +315,7 @@ jobs:
             which javac && javac -version
       - run:
           name: "Build RocksDBJava x86 and ARM Static Libraries"
-          command: make V=1 J=16 -j16 rocksdbjavastaticosx
+          command: make V=1 J=8 -j8 rocksdbjavastaticosx
           no_output_timeout: 20m
       - post-steps
 
@@ -341,7 +340,7 @@ jobs:
             which javac && javac -version
       - run:
           name: "Build RocksDBJava Universal Binary Static Library"
-          command: make V=1 J=16 -j16 rocksdbjavastaticosx_ub
+          command: make V=1 J=8 -j8 rocksdbjavastaticosx_ub
           no_output_timeout: 20m
       - post-steps
 
@@ -368,7 +367,7 @@ jobs:
       - pre-steps
       - setup-folly
       - build-folly
-      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j10 && ctest -j10)
+      - run: (mkdir build && cd build && cmake -DUSE_FOLLY=1 -DWITH_GFLAGS=1 -DROCKSDB_BUILD_SHARED=0 .. && make V=1 -j10) #Disable RocksDB linux test, We rely on Default PR build.
       - post-steps
 
   build-linux-arm-cmake-no_test_run:
@@ -393,7 +392,7 @@ jobs:
             mkdir build
             cd build
             cmake -DCMAKE_BUILD_TYPE=Release -DWITH_TESTS=0 -DWITH_GFLAGS=1 -DWITH_BENCHMARK_TOOLS=0 -DWITH_TOOLS=0 -DWITH_CORE_TOOLS=1 ..
-            make -j4
+            make -j6
       - run:
           name: "Build Java with cmake"
           command: |
@@ -401,7 +400,7 @@ jobs:
             mkdir build
             cd build
             cmake -DJNI=1 -DCMAKE_BUILD_TYPE=Release -DWITH_GFLAGS=1 ..
-            make -j4 rocksdb rocksdbjni
+            make -j6 rocksdb rocksdbjni
       - post-steps
 
 workflows:
