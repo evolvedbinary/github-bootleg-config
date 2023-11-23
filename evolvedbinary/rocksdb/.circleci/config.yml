@@ -1,6 +1,33 @@
 version: 2.1
 
+orbs:
+  win: circleci/windows@5.0.0
+
 commands:
+  install-cmake-on-macos:
+    steps:
+      - run:
+          name: Install cmake on macos
+          command: |
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake
+
+  install-jdk8-on-macos:
+    steps:
+      - run:
+          name: Install JDK 8 on macos
+          command: |
+            HOMEBREW_NO_AUTO_UPDATE=1 brew tap bell-sw/liberica
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install --cask liberica-jdk8
+
+  increase-max-open-files-on-macos:
+    steps:
+      - run:
+          name: Increase max open files
+          command: |
+            sudo sysctl -w kern.maxfiles=1048576
+            sudo sysctl -w kern.maxfilesperproc=1048576
+            sudo launchctl limit maxfiles 1048576
+
   pre-steps:
     steps:
       - checkout
@@ -18,6 +45,51 @@ commands:
             echo "export SNAPPY_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/snappy" >> $BASH_ENV
             echo "export LZ4_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/lz4" >> $BASH_ENV
             echo "export ZSTD_DOWNLOAD_BASE=https://rocksdb-deps.s3.us-west-2.amazonaws.com/pkgs/zstd" >> $BASH_ENV
+
+  windows-build-steps:
+    steps:
+      - checkout
+      - run:
+          name: "Install thirdparty dependencies"
+          command: |
+            echo "Installing CMake..."
+            choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+            choco install liberica8jdk -y
+            mkdir $Env:THIRDPARTY_HOME
+            cd $Env:THIRDPARTY_HOME
+            echo "Building Snappy dependency..."
+            curl https://github.com/google/snappy/archive/refs/tags/1.1.8.zip -O snappy-1.1.8.zip
+            unzip -q snappy-1.1.8.zip
+            cd snappy-1.1.8
+            mkdir build
+            cd build
+            & $Env:CMAKE_BIN -G "$Env:CMAKE_GENERATOR" ..
+            msbuild.exe Snappy.sln -maxCpuCount -property:Configuration=Debug -property:Platform=x64
+      - run:
+          name: "Build RocksDB"
+          command: |
+            $env:Path = $env:JAVA_HOME + ";" + $env:Path
+            mkdir build
+            cd build
+            & $Env:CMAKE_BIN -G "$Env:CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=Debug -DOPTDBG=1 -DPORTABLE="$Env:CMAKE_PORTABLE" -DSNAPPY=1 -DJNI=1 ..
+            cd ..
+            echo "Building with VS version: $Env:CMAKE_GENERATOR"
+            msbuild.exe build/rocksdb.sln -maxCpuCount -property:Configuration=Debug -property:Platform=x64
+      - run:
+          name: "Test RocksDB"
+          shell: powershell.exe
+          command: |
+            build_tools\run_ci_db_test.ps1 -SuiteRun arena_test,db_basic_test,db_test,db_test2,db_merge_operand_test,bloom_test,c_test,coding_test,crc32c_test,dynamic_bloom_test,env_basic_test,env_test,hash_test,random_test -Concurrency 16
+      - run:
+          name: "Test RocksJava"
+          command: |
+            cd build\java
+            & $Env:CTEST_BIN -C Debug -j 16
+
+  pre-steps-macos:
+    steps:
+      - pre-steps
+
 
   post-steps:
     steps:
@@ -63,6 +135,13 @@ commands:
           command: |
             sudo apt-get update -y && sudo apt-get install -y libgflags-dev
 
+  install-gflags-on-macos:
+    steps:
+      - run:
+          name: Install gflags on macos
+          command: |
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install gflags
+
 
 executors:
   linux-docker:
@@ -85,6 +164,78 @@ executors:
       - image: evolvedbinary/rocksjava:centos6_x64-be
 
 jobs:
+  build-macos-cmake:
+    macos:
+      xcode: 14.3.1
+    resource_class: macos.m1.medium.gen1
+    parameters:
+      run_even_tests:
+        description: run even or odd tests, used to split tests to 2 groups
+        type: boolean
+        default: true
+    steps:
+      - increase-max-open-files-on-macos
+      - install-cmake-on-macos
+      - install-gflags-on-macos
+      - pre-steps-macos
+      - run:
+          name: "cmake generate project file"
+          command: ulimit -S -n `ulimit -H -n` && mkdir build && cd build && cmake -DWITH_GFLAGS=1 ..
+      - run:
+          name: "Build tests"
+          command: cd build && make V=1 -j16
+      - when:
+          condition: << parameters.run_even_tests >>
+          steps:
+            - run:
+                name: "Run even tests"
+                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 0,,2
+      - when:
+          condition:
+            not: << parameters.run_even_tests >>
+          steps:
+            - run:
+                name: "Run odd tests"
+                command: ulimit -S -n `ulimit -H -n` && cd build && ctest -j16 -I 1,,2
+      - post-steps
+
+
+  build-windows-vs2022:
+    executor:
+      name: win/server-2022
+      size: xlarge
+    environment:
+      THIRDPARTY_HOME: C:/Users/circleci/thirdparty
+      CMAKE_HOME: C:/Program Files/CMake
+      CMAKE_BIN: C:/Program Files/CMake/bin/cmake.exe
+      CTEST_BIN: C:/Program Files/CMake/bin/ctest.exe
+      JAVA_HOME: C:/Program Files/BellSoft/LibericaJDK-8
+      SNAPPY_HOME: C:/Users/circleci/thirdparty/snappy-1.1.8
+      SNAPPY_INCLUDE: C:/Users/circleci/thirdparty/snappy-1.1.8;C:/Users/circleci/thirdparty/snappy-1.1.8/build
+      SNAPPY_LIB_DEBUG: C:/Users/circleci/thirdparty/snappy-1.1.8/build/Debug/snappy.lib
+      CMAKE_GENERATOR: Visual Studio 17 2022
+      CMAKE_PORTABLE: 1
+    steps:
+      - windows-build-steps
+
+  build-windows-vs2019:
+    executor:
+      name: win/server-2019
+      size: xlarge
+    environment:
+      THIRDPARTY_HOME: C:/Users/circleci/thirdparty
+      CMAKE_HOME: C:/Program Files/CMake
+      CMAKE_BIN: C:/Program Files/CMake/bin/cmake.exe
+      CTEST_BIN: C:/Program Files/CMake/bin/ctest.exe
+      JAVA_HOME: C:/Program Files/BellSoft/LibericaJDK-8
+      SNAPPY_HOME: C:/Users/circleci/thirdparty/snappy-1.1.8
+      SNAPPY_INCLUDE: C:/Users/circleci/thirdparty/snappy-1.1.8;C:/Users/circleci/thirdparty/snappy-1.1.8/build
+      SNAPPY_LIB_DEBUG: C:/Users/circleci/thirdparty/snappy-1.1.8/build/Debug/snappy.lib
+      CMAKE_GENERATOR: Visual Studio 16 2019
+      CMAKE_PORTABLE: 1
+    steps:
+      - windows-build-steps
+
   build-linux-java:
     executor: linux-docker
     resource_class: large
@@ -117,6 +268,97 @@ jobs:
       - run:
           name: "Build RocksDBJava Static Library"
           command: scl enable devtoolset-7 'make V=1 J=8 -j8 rocksdbjavastatic'
+      - post-steps
+
+  build-macos-java:
+    macos:
+      xcode: 14.3.1
+    resource_class: macos.m1.medium.gen1
+    environment:
+      JAVA_HOME: /Library/Java/JavaVirtualMachines/liberica-jdk-8.jdk/Contents/Home
+      ROCKSDB_DISABLE_JEMALLOC: 1 # jemalloc causes java 8 crash
+    steps:
+      - increase-max-open-files-on-macos
+      - install-gflags-on-macos
+      - install-jdk8-on-macos
+      - pre-steps-macos
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Test RocksDBJava"
+          command: make V=1 J=16 -j16 jtest
+          no_output_timeout: 20m
+      - post-steps
+
+  build-macos-java-static:
+    macos:
+      xcode: 14.3.1
+    resource_class: macos.m1.medium.gen1
+    environment:
+      JAVA_HOME: /Library/Java/JavaVirtualMachines/liberica-jdk-8.jdk/Contents/Home
+    steps:
+      - increase-max-open-files-on-macos
+      - install-gflags-on-macos
+      - install-cmake-on-macos
+      - install-jdk8-on-macos
+      - pre-steps-macos
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Build RocksDBJava x86 and ARM Static Libraries"
+          command: make V=1 J=16 -j16 rocksdbjavastaticosx
+          no_output_timeout: 20m
+      - post-steps
+
+  build-macos-java-static-universal:
+    macos:
+      xcode: 14.3.1
+    resource_class: macos.m1.medium.gen1
+    environment:
+      JAVA_HOME: /Library/Java/JavaVirtualMachines/liberica-jdk-8.jdk/Contents/Home
+    steps:
+      - increase-max-open-files-on-macos
+      - install-gflags-on-macos
+      - install-cmake-on-macos
+      - install-jdk8-on-macos
+      - pre-steps-macos
+      - run:
+          name: "Set Java Environment"
+          command: |
+            echo "JAVA_HOME=${JAVA_HOME}"
+            echo 'export PATH=$JAVA_HOME/bin:$PATH' >> $BASH_ENV
+            which java && java -version
+            which javac && javac -version
+      - run:
+          name: "Build RocksDBJava Universal Binary Static Library"
+          command: make V=1 J=16 -j16 rocksdbjavastaticosx_ub
+          no_output_timeout: 20m
+      - post-steps
+
+  build-cmake-mingw:
+    executor: linux-docker
+    resource_class: large
+    steps:
+      - pre-steps
+      - run: update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+      - run:
+          name: "Build cmake-mingw"
+          command: |
+            export PATH=$JAVA_HOME/bin:$PATH
+            echo "JAVA_HOME=${JAVA_HOME}"
+            which java && java -version
+            which javac && javac -version
+            mkdir build && cd build && cmake -DJNI=1 -DWITH_GFLAGS=OFF .. -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ -DCMAKE_SYSTEM_NAME=Windows && make -j4 rocksdb rocksdbjni
       - post-steps
 
   build-linux-cmake-with-folly:
@@ -164,9 +406,21 @@ jobs:
 
 workflows:
   version: 2
-  jobs-java:
+  jobs-linux:
     jobs:
       - build-linux-java
+      - build-linux-java # Build twice
       - build-linux-java-static
       - build-linux-cmake-with-folly
       - build-linux-arm-cmake-no_test_run
+  jobs-windows:
+    jobs:
+      - build-windows-vs2019
+      - build-windows-vs2022
+      - build-cmake-mingw
+  jobs-macos:
+    jobs:
+      - build-macos-cmake
+      - build-macos-java
+      - build-macos-java-static
+      - build-macos-java-static-universal
